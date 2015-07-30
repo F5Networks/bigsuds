@@ -1,0 +1,18 @@
+Metadata-Version: 1.1
+Name: bigsuds
+Version: 1.0.1
+Summary: Library for F5 Networks iControl API
+Home-page: http://devcentral.f5.com
+Author: F5 Networks, Inc.
+Author-email: noreply@f5.com
+License: MIT
+Description: Library for F5 Networks iControl API
+Keywords: f5 icontrol
+Platform: UNKNOWN
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 2
+Classifier: Programming Language :: Python :: 2.4
+Classifier: Programming Language :: Python :: 2.5
+Classifier: Programming Language :: Python :: 2.6
+Classifier: Programming Language :: Python :: 2.7
