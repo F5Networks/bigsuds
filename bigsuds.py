@@ -18,13 +18,18 @@ from suds.xsd.doctor import ImportDoctor, Import
 from suds.transport import TransportError
 from suds import WebFault, TypeNotFound, MethodNotFound as _MethodNotFound
 
-__version__ = '1.0.1'
+__version__ = '1.0.2'
 
 
 # We need to monkey-patch the Client's ObjectCache due to a suds bug:
 # https://fedorahosted.org/suds/ticket/376
 suds.client.ObjectCache = lambda **kwargs: None
 
+# We need to add support for SSL Contexts for Python 2.7.9+
+from sys import hexversion as python_version
+if python_version >= 34015728:
+    import ssl
+    ssl._create_default_https_context = ssl._create_unverified_context
 
 log = logging.getLogger('bigsuds')
 

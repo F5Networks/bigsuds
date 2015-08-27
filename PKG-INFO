@@ -1,12 +1,12 @@
 Metadata-Version: 1.1
 Name: bigsuds
-Version: 1.0.1
+Version: 1.0.2
 Summary: Library for F5 Networks iControl API
 Home-page: http://devcentral.f5.com
 Author: F5 Networks, Inc.
-Author-email: noreply@f5.com
-License: MIT
-Description: Library for F5 Networks iControl API
+Author-email: devcentral@f5.com
+License: https://devcentral.f5.com/resources/devcentral-eula
+Description: UNKNOWN
 Keywords: f5 icontrol
 Platform: UNKNOWN
 Classifier: Development Status :: 5 - Production/Stable
