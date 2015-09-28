@@ -7,6 +7,7 @@ import httplib
 import logging
 import os
 import re
+import ssl
 import urllib2
 from xml.sax import SAXParseException
 
@@ -16,6 +17,7 @@ from suds.sudsobject import Object as SudsObject
 from suds.client import Client
 from suds.xsd.doctor import ImportDoctor, Import
 from suds.transport import TransportError
+from suds.transport.https import HttpAuthenticated
 from suds import WebFault, TypeNotFound, MethodNotFound as _MethodNotFound
 
 __version__ = '1.0.2'
@@ -26,10 +28,22 @@ __version__ = '1.0.2'
 suds.client.ObjectCache = lambda **kwargs: None
 
 # We need to add support for SSL Contexts for Python 2.7.9+
-from sys import hexversion as python_version
-if python_version >= 34015728:
-    import ssl
-    ssl._create_default_https_context = ssl._create_unverified_context
+class HTTPSHandlerNoVerify(urllib2.HTTPSHandler):
+    def __init__(self, *args, **kwargs):
+        try:
+            kwargs['context'] = ssl._create_unverified_context()
+        except AttributeError:
+            # Python prior to 2.7.9 doesn't have default-enabled certificate
+            # verification
+            pass
+
+        urllib2.HTTPSHandler.__init__(self, *args, **kwargs)
+
+class HTTPSTransportNoVerify(HttpAuthenticated):
+    def u2handlers(self):
+        handlers = HttpAuthenticated.u2handlers(self)
+        handlers.append(HTTPSHandlerNoVerify())
+        return handlers
 
 log = logging.getLogger('bigsuds')
 
@@ -83,7 +97,7 @@ class BIGIP(object):
      * All of these exceptions derive from L{OperationFailed}.
     """
     def __init__(self, hostname, username='admin', password='admin',
-                 debug=False, cachedir=None):
+                 debug=False, cachedir=None, verify=False):
         """init
 
         @param hostname: The IP address or hostname of the BIGIP.
@@ -94,12 +108,15 @@ class BIGIP(object):
             names.
         @param cachedir: The directory to cache wsdls in. None indicates
             that caching should be disabled.
+        @param verify: When True, performs SSL certificate validation in
+            Python / urllib2 versions that support it (v2.7.9 and newer)
         """
         self._hostname = hostname
         self._username = username
         self._password = password
         self._debug = debug
         self._cachedir = cachedir
+        self._verify = verify
         if debug:
             self._instantiate_namespaces()
 
@@ -138,7 +155,7 @@ class BIGIP(object):
     def _create_client(self, wsdl_name):
         try:
             client = get_client(self._hostname, wsdl_name, self._username,
-                    self._password, self._cachedir)
+                    self._password, self._cachedir, self._verify)
         except SAXParseException, e:
             raise ParseError('%s\nFailed to parse wsdl. Is "%s" a valid '
                     'namespace?' % (e, wsdl_name))
@@ -159,7 +176,7 @@ class BIGIP(object):
 
     def _instantiate_namespaces(self):
         wsdl_hierarchy = get_wsdls(self._hostname, self._username,
-                                   self._password)
+                                   self._password, self._verify)
         for namespace, attr_list in wsdl_hierarchy.iteritems():
             ns = getattr(self, namespace)
             ns.set_attr_list(attr_list)
@@ -203,7 +220,7 @@ class Transaction(object):
 
 
 def get_client(hostname, wsdl_name, username='admin', password='admin',
-               cachedir=None):
+               cachedir=None, verify=False):
     """Returns and instance of suds.client.Client.
 
     A separate client is used for each iControl WSDL/Namespace (e.g.
@@ -217,6 +234,8 @@ def get_client(hostname, wsdl_name, username='admin', password='admin',
     @param password: The admin password on the BIGIP.
     @param cachedir: The directory to cache wsdls in. None indicates
         that caching should be disabled.
+    @param verify: When True, performs SSL certificate validation in
+        Python / urllib2 versions that support it (v2.7.9 and newer)
     """
     url = 'https://%s/iControl/iControlPortal.cgi?WSDL=%s' % (
             hostname, wsdl_name)
@@ -227,8 +246,14 @@ def get_client(hostname, wsdl_name, username='admin', password='admin',
         cachedir = ObjectCache(location=os.path.expanduser(cachedir), days=1)
 
     doctor = ImportDoctor(imp)
-    client = Client(url, doctor=doctor, username=username, password=password,
-                    cache=cachedir)
+    if verify:
+        client = Client(url, doctor=doctor, username=username, password=password,
+                        cache=cachedir)
+    else:
+        transport = HTTPSTransportNoVerify(username=username,
+                                           password=password)
+        client = Client(url, doctor=doctor, username=username, password=password,
+                        cache=cachedir, transport=transport)
 
     # Without this, subsequent requests will use the actual hostname of the
     # BIGIP, which is often times invalid.
@@ -237,7 +262,7 @@ def get_client(hostname, wsdl_name, username='admin', password='admin',
     return client
 
 
-def get_wsdls(hostname, username='admin', password='admin'):
+def get_wsdls(hostname, username='admin', password='admin', verify=False):
     """Returns the set of all available WSDLs on this server
 
     Used for providing introspection into the available namespaces and WSDLs
@@ -246,6 +271,8 @@ def get_wsdls(hostname, username='admin', password='admin'):
     @param hostname: The IP address or hostname of the BIGIP.
     @param username: The admin username on the BIGIP.
     @param password: The admin password on the BIGIP.
+    @param verify: When True, performs SSL certificate validation in
+        Python / urllib2 versions that support it (v2.7.9 and newer)
     """
     url = 'https://%s/iControl/iControlPortal.cgi' % (hostname)
     regex = re.compile(r'/iControl/iControlPortal.cgi\?WSDL=([^"]+)"')
@@ -257,7 +284,10 @@ def get_wsdls(hostname, username='admin', password='admin'):
     # 11.3.0 has a realm of "BIG-\IP". I'm not sure exactly when it changed.
     auth_handler.add_password(uri='https://%s/' % (hostname), user=username, passwd=password,
                               realm="BIG\-IP")
-    opener = urllib2.build_opener(auth_handler)
+    if verify:
+        opener = urllib2.build_opener(auth_handler)
+    else:
+        opener = urllib2.build_opener(auth_handler, HTTPSHandlerNoVerify)
     try:
         result = opener.open(url)
     except urllib2.URLError, e:
