@@ -97,7 +97,7 @@ class BIGIP(object):
      * All of these exceptions derive from L{OperationFailed}.
     """
     def __init__(self, hostname, username='admin', password='admin',
-                 debug=False, cachedir=None, verify=False):
+                 debug=False, cachedir=None, verify=False, timeout=90):
         """init
 
         @param hostname: The IP address or hostname of the BIGIP.
@@ -110,6 +110,8 @@ class BIGIP(object):
             that caching should be disabled.
         @param verify: When True, performs SSL certificate validation in
             Python / urllib2 versions that support it (v2.7.9 and newer)
+        @param timeout: The time (in seconds) to wait before timing out
+            the connection to the URL
         """
         self._hostname = hostname
         self._username = username
@@ -117,6 +119,7 @@ class BIGIP(object):
         self._debug = debug
         self._cachedir = cachedir
         self._verify = verify
+        self._timeout = timeout
         if debug:
             self._instantiate_namespaces()
 
@@ -155,7 +158,7 @@ class BIGIP(object):
     def _create_client(self, wsdl_name):
         try:
             client = get_client(self._hostname, wsdl_name, self._username,
-                    self._password, self._cachedir, self._verify)
+                    self._password, self._cachedir, self._verify, self._timeout)
         except SAXParseException, e:
             raise ParseError('%s\nFailed to parse wsdl. Is "%s" a valid '
                     'namespace?' % (e, wsdl_name))
@@ -176,7 +179,8 @@ class BIGIP(object):
 
     def _instantiate_namespaces(self):
         wsdl_hierarchy = get_wsdls(self._hostname, self._username,
-                                   self._password, self._verify)
+                                   self._password, self._verify,
+                                   self._timeout)
         for namespace, attr_list in wsdl_hierarchy.iteritems():
             ns = getattr(self, namespace)
             ns.set_attr_list(attr_list)
@@ -220,7 +224,7 @@ class Transaction(object):
 
 
 def get_client(hostname, wsdl_name, username='admin', password='admin',
-               cachedir=None, verify=False):
+               cachedir=None, verify=False, timeout=90):
     """Returns and instance of suds.client.Client.
 
     A separate client is used for each iControl WSDL/Namespace (e.g.
@@ -236,6 +240,8 @@ def get_client(hostname, wsdl_name, username='admin', password='admin',
         that caching should be disabled.
     @param verify: When True, performs SSL certificate validation in
         Python / urllib2 versions that support it (v2.7.9 and newer)
+    @param timeout: The time to wait (in seconds) before timing out
+        the connection to the URL
     """
     url = 'https://%s/iControl/iControlPortal.cgi?WSDL=%s' % (
             hostname, wsdl_name)
@@ -248,12 +254,12 @@ def get_client(hostname, wsdl_name, username='admin', password='admin',
     doctor = ImportDoctor(imp)
     if verify:
         client = Client(url, doctor=doctor, username=username, password=password,
-                        cache=cachedir)
+                        cache=cachedir, timeout=timeout)
     else:
         transport = HTTPSTransportNoVerify(username=username,
-                                           password=password)
+                                           password=password, timeout=timeout)
         client = Client(url, doctor=doctor, username=username, password=password,
-                        cache=cachedir, transport=transport)
+                        cache=cachedir, transport=transport, timeout=timeout)
 
     # Without this, subsequent requests will use the actual hostname of the
     # BIGIP, which is often times invalid.
@@ -262,7 +268,7 @@ def get_client(hostname, wsdl_name, username='admin', password='admin',
     return client
 
 
-def get_wsdls(hostname, username='admin', password='admin', verify=False):
+def get_wsdls(hostname, username='admin', password='admin', verify=False, timeout=90):
     """Returns the set of all available WSDLs on this server
 
     Used for providing introspection into the available namespaces and WSDLs
@@ -273,6 +279,8 @@ def get_wsdls(hostname, username='admin', password='admin', verify=False):
     @param password: The admin password on the BIGIP.
     @param verify: When True, performs SSL certificate validation in
         Python / urllib2 versions that support it (v2.7.9 and newer)
+    @param timeout: The time to wait (in seconds) before timing out the connection
+        to the URL
     """
     url = 'https://%s/iControl/iControlPortal.cgi' % (hostname)
     regex = re.compile(r'/iControl/iControlPortal.cgi\?WSDL=([^"]+)"')
@@ -289,7 +297,7 @@ def get_wsdls(hostname, username='admin', password='admin', verify=False):
     else:
         opener = urllib2.build_opener(auth_handler, HTTPSHandlerNoVerify)
     try:
-        result = opener.open(url)
+        result = opener.open(url, timeout=timeout)
     except urllib2.URLError, e:
         raise ConnectionError(str(e))
 
@@ -450,7 +458,7 @@ def _wrap_method(method, wsdl_name, arg_processor, result_processor, usage):
         try:
             result = method(*args, **kwargs)
         except AttributeError:
-            # Oddly, his seems to happen when the wrong password is used.
+            # Oddly, this seems to happen when the wrong password is used.
             raise ConnectionError('iControl call failed, possibly invalid '
                     'credentials.')
         except _MethodNotFound, e:
