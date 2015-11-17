@@ -20,7 +20,7 @@ from suds.transport import TransportError
 from suds.transport.https import HttpAuthenticated
 from suds import WebFault, TypeNotFound, MethodNotFound as _MethodNotFound
 
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 
 # We need to monkey-patch the Client's ObjectCache due to a suds bug:
