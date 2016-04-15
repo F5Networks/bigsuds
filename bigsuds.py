@@ -20,7 +20,7 @@ from suds.transport import TransportError
 from suds.transport.https import HttpAuthenticated
 from suds import WebFault, TypeNotFound, MethodNotFound as _MethodNotFound
 
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 
 # We need to monkey-patch the Client's ObjectCache due to a suds bug:
@@ -97,7 +97,8 @@ class BIGIP(object):
      * All of these exceptions derive from L{OperationFailed}.
     """
     def __init__(self, hostname, username='admin', password='admin',
-                 debug=False, cachedir=None, verify=False, timeout=90):
+                 debug=False, cachedir=None, verify=False, timeout=90,
+                 port=443):
         """init
 
         @param hostname: The IP address or hostname of the BIGIP.
@@ -114,6 +115,7 @@ class BIGIP(object):
             the connection to the URL
         """
         self._hostname = hostname
+        self._port = port
         self._username = username
         self._password = password
         self._debug = debug
@@ -148,7 +150,7 @@ class BIGIP(object):
         if attr.startswith('__'):
             return getattr(super(BIGIP, self), attr)
         if '_' in attr:
-            # Backwards compatability with pycontrol:
+            # Backwards compatibility with pycontrol:
             first, second = attr.split('_', 1)
             return getattr(getattr(self, first), second)
         ns = _Namespace(attr, self._create_client)
@@ -158,7 +160,8 @@ class BIGIP(object):
     def _create_client(self, wsdl_name):
         try:
             client = get_client(self._hostname, wsdl_name, self._username,
-                    self._password, self._cachedir, self._verify, self._timeout)
+                                self._password, self._cachedir, self._verify,
+                                self._timeout,self._port)
         except SAXParseException, e:
             raise ParseError('%s\nFailed to parse wsdl. Is "%s" a valid '
                     'namespace?' % (e, wsdl_name))
@@ -180,7 +183,7 @@ class BIGIP(object):
     def _instantiate_namespaces(self):
         wsdl_hierarchy = get_wsdls(self._hostname, self._username,
                                    self._password, self._verify,
-                                   self._timeout)
+                                   self._timeout, self._port)
         for namespace, attr_list in wsdl_hierarchy.iteritems():
             ns = getattr(self, namespace)
             ns.set_attr_list(attr_list)
@@ -224,7 +227,7 @@ class Transaction(object):
 
 
 def get_client(hostname, wsdl_name, username='admin', password='admin',
-               cachedir=None, verify=False, timeout=90):
+               cachedir=None, verify=False, timeout=90, port=443):
     """Returns and instance of suds.client.Client.
 
     A separate client is used for each iControl WSDL/Namespace (e.g.
@@ -243,8 +246,8 @@ def get_client(hostname, wsdl_name, username='admin', password='admin',
     @param timeout: The time to wait (in seconds) before timing out
         the connection to the URL
     """
-    url = 'https://%s/iControl/iControlPortal.cgi?WSDL=%s' % (
-            hostname, wsdl_name)
+    url = 'https://%s:%s/iControl/iControlPortal.cgi?WSDL=%s' % (
+            hostname, port, wsdl_name)
     imp = Import('http://schemas.xmlsoap.org/soap/encoding/')
     imp.filter.add('urn:iControl')
 
@@ -268,7 +271,8 @@ def get_client(hostname, wsdl_name, username='admin', password='admin',
     return client
 
 
-def get_wsdls(hostname, username='admin', password='admin', verify=False, timeout=90):
+def get_wsdls(hostname, username='admin', password='admin', verify=False,
+              timeout=90, port=443):
     """Returns the set of all available WSDLs on this server
 
     Used for providing introspection into the available namespaces and WSDLs
@@ -282,16 +286,16 @@ def get_wsdls(hostname, username='admin', password='admin', verify=False, timeou
     @param timeout: The time to wait (in seconds) before timing out the connection
         to the URL
     """
-    url = 'https://%s/iControl/iControlPortal.cgi' % (hostname)
+    url = 'https://%s:%s/iControl/iControlPortal.cgi' % (hostname, port)
     regex = re.compile(r'/iControl/iControlPortal.cgi\?WSDL=([^"]+)"')
 
     auth_handler = urllib2.HTTPBasicAuthHandler()
     # 10.1.0 has a realm of "BIG-IP"
-    auth_handler.add_password(uri='https://%s/' % (hostname), user=username, passwd=password,
-                              realm="BIG-IP")
+    auth_handler.add_password(uri='https://%s:%s/' % (hostname, port),
+                              user=username, passwd=password, realm="BIG-IP")
     # 11.3.0 has a realm of "BIG-\IP". I'm not sure exactly when it changed.
-    auth_handler.add_password(uri='https://%s/' % (hostname), user=username, passwd=password,
-                              realm="BIG\-IP")
+    auth_handler.add_password(uri='https://%s:%s/' % (hostname, port),
+                              user=username, passwd=password, realm="BIG\-IP")
     if verify:
         opener = urllib2.build_opener(auth_handler)
     else:
