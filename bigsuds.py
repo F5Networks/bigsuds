@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """An iControl client library.
 
 See the documentation for the L{BIGIP} class for usage examples.
@@ -20,6 +21,7 @@ except ImportError:
      from urllib.request import HTTPBasicAuthHandler
      from urllib.request import HTTPSHandler
 
+from six import PY2
 import logging
 import os
 import re
@@ -670,7 +672,10 @@ class _NativeResultProcessor(_ResultProcessor):
         elif isinstance(value, six.string_types):
             # This handles suds.sax.text.Text as well, as it derives from
             # unicode.
-            return str(value)
+            if PY2:
+                return str(value.encode('utf-8'))
+            else:
+                return str(value)
         elif isinstance(value, six.integer_types):
             return int(value)
         return value
