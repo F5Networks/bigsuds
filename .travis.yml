@@ -6,6 +6,8 @@ python:
 sudo: true
 services:
   - docker
+script:
+  - /usr/bin/true
 deploy:
   - provider: pypi
     user: $PYPI_USER
